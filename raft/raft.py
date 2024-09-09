@@ -47,6 +47,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--embedding_model", type=str, default="text-embedding-ada-002", help="The embedding model to use to encode documents chunks (text-embedding-ada-002, ...)")
     parser.add_argument("--completion_model", type=str, default="gpt-4", help="The model to use to generate questions and answers (gpt-3.5, gpt-4, ...)")
     parser.add_argument("--fast", action="store_true", help="Run the script in fast mode (no recovery implemented)")
+    parser.add_argument("--splitter", choices=["semantic", "breakline"], default="semantic", help="Run the script in fast mode (no recovery implemented)")
 
     args = parser.parse_args()
     return args
@@ -57,7 +58,8 @@ def get_chunks(
     doctype: DocType = "pdf", 
     chunk_size: int = 512, 
     openai_key: str | None = None,
-    model: str = None
+    model: str = None,
+    splitter_type="semantic"
 ) -> list[str]:
     """
     Takes in a `file_path` and `doctype`, retrieves the document, breaks it down into chunks of size
@@ -97,14 +99,20 @@ def get_chunks(
         else:
             raise TypeError("Document is not one of the accepted types: api, pdf, json, txt")
         
-        num_chunks = ceil(len(text) / chunk_size)
-        logger.info(f"Splitting text into {num_chunks} chunks using the {model} model.")
-
-        embeddings = build_langchain_embeddings(openai_api_key=openai_key, model=model)
-        text_splitter = SemanticChunker(embeddings, number_of_chunks=num_chunks)
-        chunks = text_splitter.create_documents([text])
-        chunks = [chunk.page_content for chunk in chunks]
-            
+        
+        if splitter_type == "semantic":
+            num_chunks = ceil(len(text) / chunk_size)
+            logger.info(f"Splitting text into {num_chunks} chunks using the {model} model.")
+            embeddings = build_langchain_embeddings(openai_api_key=openai_key, model=model)
+            text_splitter = SemanticChunker(embeddings, number_of_chunks=num_chunks)
+            chunks = text_splitter.create_documents([text])
+            chunks = [chunk.page_content for chunk in chunks]
+        elif splitter_type == "breakline":
+            chunks = []
+            for each in data.split("\n"):
+                if each:
+                    chunks.append(each)
+    print("Number of chunks:", len(chunks))
     return chunks
 
 def generate_instructions(client: OpenAI, api_call: Any, x=5, model: str = None) -> list[str]:
@@ -310,8 +318,8 @@ def main():
 
     CHUNK_SIZE = args.chunk_size
     NUM_DISTRACT_DOCS = args.distractors
-
-    chunks = get_chunks(args.datapath, args.doctype, CHUNK_SIZE, OPENAPI_API_KEY, model=args.embedding_model)
+    print("Use splitter:", args.splitter)
+    chunks = get_chunks(args.datapath, args.doctype, CHUNK_SIZE, OPENAPI_API_KEY, model=args.embedding_model, splitter_type=args.splitter)
 
     ds = None
 
